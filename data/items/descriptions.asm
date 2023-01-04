@@ -480,7 +480,7 @@ TeruSama5Desc:
 
 ExpShareDesc:
 	db   "Shares battle EXP."
-	next "Points. (HOLD)@"
+	next "Points.@"
 
 OldRodDesc:
 	db   "Use by water to"
@@ -660,7 +660,7 @@ SlowpokeTailDesc:
 	next "high.@"
 
 PinkBowDesc:
-	db   "Powers up normal-"
+	db   "Powers up fairy-"
 	next "type moves. (HOLD)@"
 
 StickDesc:
