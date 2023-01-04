@@ -68,8 +68,7 @@ HallOfFame_FadeOutMusic:
 	ld [wVramState], a
 	ldh [hMapAnims], a
 	farcall InitDisplayForHallOfFame
-	ld c, 100
-	jp DelayFrames
+	ret
 
 HallOfFame_PlayMusicDE:
 	push de
@@ -123,10 +122,8 @@ AnimateHallOfFame:
 	hlcoord 1, 2
 	call PlaceString
 	call WaitBGMap
-	decoord 6, 5
-	ld c, ANIM_MON_HOF
-	predef HOF_AnimateFrontpic
-	ld c, 60
+	call HOF_PlayCry
+	ld c, 180
 	call DelayFrames
 	and a
 	ret
@@ -363,9 +360,8 @@ _HallOfFamePC:
 	call ClearBGPalettes
 	pop hl
 	call DisplayHOFMon
-; BUG: A "HOF Master!" title for 200-Time Famers is defined but inaccessible (see docs/bugs_and_glitches.md)
 	ld a, [wHallOfFameTempWinCount]
-	cp HOF_MASTER_COUNT + 1
+	cp HOF_MASTER_COUNT
 	jr c, .print_num_hof
 	ld de, .HOFMaster
 	hlcoord 1, 2
@@ -390,9 +386,7 @@ _HallOfFamePC:
 	ld b, SCGB_PLAYER_OR_MON_FRONTPIC_PALS
 	call GetSGBLayout
 	call SetPalettes
-	decoord 6, 5
-	ld c, ANIM_MON_HOF
-	predef HOF_AnimateFrontpic
+	call HOF_PlayCry
 	and a
 	ret
 
@@ -603,3 +597,18 @@ HOF_AnimatePlayerPic:
 
 .PlayTime:
 	db "PLAY TIME@"
+
+HOF_PlayCry::
+	ld a, [wCurPartySpecies]
+	cp EGG
+	jr z, .fail
+	call IsAPokemon
+	jr c, .fail
+	ld a, [wCurPartySpecies]
+	call PlayMonCry2
+	ret
+
+.fail
+	ld a, 1
+	ld [wCurPartySpecies], a
+	ret

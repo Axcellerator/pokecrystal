@@ -504,7 +504,7 @@ CheckEnemyTurn:
 	call StdBattleTextbox
 
 	call HitSelfInConfusion
-	call BattleCommand_DamageCalc
+	call ConfusionDamageCalc
 	call BattleCommand_LowerSub
 
 	xor a
@@ -607,7 +607,7 @@ HitConfusion:
 	ld [wCriticalHit], a
 
 	call HitSelfInConfusion
-	call BattleCommand_DamageCalc
+	call ConfusionDamageCalc
 	call BattleCommand_LowerSub
 
 	xor a
@@ -1253,12 +1253,6 @@ BattleCommand_Stab:
 	pop de
 	pop hl
 
-	push de
-	push bc
-	farcall DoBadgeTypeBoosts
-	pop bc
-	pop de
-
 	ld a, [wCurType]
 	cp b
 	jr z, .stab
@@ -1399,16 +1393,16 @@ BattleCheckTypeMatchup:
 	ld hl, wEnemyMonType1
 	ldh a, [hBattleTurn]
 	and a
-	jr z, CheckTypeMatchup
+	jr z, .get_type
 	ld hl, wBattleMonType1
+.get_type
+	ld a, BATTLE_VARS_MOVE_TYPE
+	call GetBattleVar ; preserves hl, de, and bc
 	; fallthrough
 CheckTypeMatchup:
-; BUG: AI makes a false assumption about CheckTypeMatchup (see docs/bugs_and_glitches.md)
 	push hl
 	push de
 	push bc
-	ld a, BATTLE_VARS_MOVE_TYPE
-	call GetBattleVar
 	ld d, a
 	ld b, [hl]
 	inc hl
@@ -1861,8 +1855,16 @@ BattleCommand_EffectChance:
 	jr z, .got_move_chance
 	ld hl, wEnemyMoveStruct + MOVE_CHANCE
 .got_move_chance
-; BUG: Moves with a 100% secondary effect chance will not trigger it in 1/256 uses (see docs/bugs_and_glitches.md)
-	call BattleRandom
+	ld a, [wLinkMode]
+	cp LINK_COLOSSEUM
+	scf ; Force RNG to be called
+	jr z, .nofix ; Don't apply fix in link battles, for compatibility
+	ld a, [hl]
+	sub 100 percent
+	; If chance was 100%, RNG won't be called (carry not set)
+	; Thus chance will be subtracted from 0, guaranteeing a carry
+.nofix
+	call c, BattleRandom
 	cp [hl]
 	pop hl
 	ret c
@@ -2083,12 +2085,13 @@ BattleCommand_FailureText:
 	inc hl
 	ld a, [hl]
 
-; BUG: Beat Up may fail to raise Substitute (see docs/bugs_and_glitches.md)
 	cp EFFECT_MULTI_HIT
 	jr z, .multihit
 	cp EFFECT_DOUBLE_HIT
 	jr z, .multihit
 	cp EFFECT_POISON_MULTI_HIT
+	jr z, .multihit
+	cp EFFECT_BEAT_UP
 	jr z, .multihit
 	jp EndMoveEffect
 
@@ -2505,21 +2508,24 @@ DittoMetalPowder:
 	pop bc
 	ret nz
 
-; BUG: Metal Powder can increase damage taken with boosted (Special) Defense (see docs/bugs_and_glitches.md)
-	ld a, c
-	srl a
-	add c
-	ld c, a
+	ld h, b
+	ld l, c
+	srl b
+	rr c
+	add hl, bc
+	ld b, h
+	ld c, l
+
+	ld a, HIGH(MAX_STAT_VALUE)
+	cp b
+	jr c, .cap
+	ret nz
+	ld a, LOW(MAX_STAT_VALUE)
+	cp c
 	ret nc
 
-	srl b
-	ld a, b
-	and a
-	jr nz, .done
-	inc b
-.done
-	scf
-	rr c
+.cap
+	ld bc, MAX_STAT_VALUE
 	ret
 
 BattleCommand_DamageStats:
@@ -2574,6 +2580,7 @@ PlayerAttackDamage:
 	ld b, a
 	ld c, [hl]
 
+	call SandstormSpDefBoost
 	ld a, [wEnemyScreens]
 	bit SCREENS_LIGHT_SCREEN, a
 	jr z, .specialcrit
@@ -2601,11 +2608,14 @@ PlayerAttackDamage:
 	call ThickClubBoost
 
 .done
+	push hl
+	call DittoMetalPowder
+	pop hl
+
 	call TruncateHL_BC
 
 	ld a, [wBattleMonLevel]
 	ld e, a
-	call DittoMetalPowder
 
 	ld a, 1
 	and a
@@ -2642,10 +2652,6 @@ TruncateHL_BC:
 	inc l
 
 .finish
-; BUG: Reflect and Light Screen can make (Special) Defense wrap around above 1024 (see docs/bugs_and_glitches.md)
-	ld a, [wLinkMode]
-	cp LINK_COLOSSEUM
-	jr z, .done
 ; If we go back to the loop point,
 ; it's the same as doing this exact
 ; same check twice.
@@ -2769,9 +2775,19 @@ SpeciesItemBoost:
 	ret nz
 
 ; Double the stat
-; BUG: Thick Club and Light Ball can make (Special) Attack wrap around above 1024 (see docs/bugs_and_glitches.md)
 	sla l
 	rl h
+
+	ld a, HIGH(MAX_STAT_VALUE)
+	cp h
+	jr c, .cap
+	ret nz
+	ld a, LOW(MAX_STAT_VALUE)
+	cp l
+	ret nc
+
+.cap
+	ld hl, MAX_STAT_VALUE
 	ret
 
 EnemyAttackDamage:
@@ -2818,6 +2834,7 @@ EnemyAttackDamage:
 	ld b, a
 	ld c, [hl]
 
+	call SandstormSpDefBoost
 	ld a, [wPlayerScreens]
 	bit SCREENS_LIGHT_SCREEN, a
 	jr z, .specialcrit
@@ -2842,11 +2859,14 @@ EnemyAttackDamage:
 	call ThickClubBoost
 
 .done
+	push hl
+	call DittoMetalPowder
+	pop hl
+
 	call TruncateHL_BC
 
 	ld a, [wEnemyMonLevel]
 	ld e, a
-	call DittoMetalPowder
 
 	ld a, 1
 	and a
@@ -2895,11 +2915,12 @@ HitSelfInConfusion:
 	ld d, 40
 	pop af
 	ld e, a
+	ld a, TRUE
+	ld [wIsConfusionDamage], a
 	ret
 
 BattleCommand_DamageCalc:
 ; Return a damage value for move power d, player level e, enemy defense c and player attack b.
-; BUG: Confusion damage is affected by type-boosting items and Explosion/Self-Destruct doubling (see docs/bugs_and_glitches.md)
 
 	ld a, BATTLE_VARS_MOVE_EFFECT
 	call GetBattleVar
@@ -2927,6 +2948,11 @@ BattleCommand_DamageCalc:
 	ret z
 
 .skip_zero_damage_check
+	xor a ; Not confusion damage
+	ld [wIsConfusionDamage], a
+	; fallthrough
+
+ConfusionDamageCalc:
 ; Minimum defense value is 1.
 	ld a, c
 	and a
@@ -2981,6 +3007,12 @@ BattleCommand_DamageCalc:
 	call Divide
 
 ; Item boosts
+
+; Item boosts don't apply to confusion damage
+	ld a, [wIsConfusionDamage]
+	and a
+	jr nz, .DoneItem
+
 	call GetUserItem
 
 	ld a, b
@@ -3595,8 +3627,6 @@ BattleCommand_SleepTarget:
 	jp nz, PrintDidntAffect2
 
 	ld hl, DidntAffect1Text
-	call .CheckAIRandomFail
-	jr c, .fail
 
 	ld a, [de]
 	and a
@@ -3636,34 +3666,6 @@ BattleCommand_SleepTarget:
 	call AnimateFailedMove
 	pop hl
 	jp StdBattleTextbox
-
-.CheckAIRandomFail:
-	; Enemy turn
-	ldh a, [hBattleTurn]
-	and a
-	jr z, .dont_fail
-
-	; Not in link battle
-	ld a, [wLinkMode]
-	and a
-	jr nz, .dont_fail
-
-	ld a, [wInBattleTowerBattle]
-	and a
-	jr nz, .dont_fail
-
-	; Not locked-on by the enemy
-	ld a, [wPlayerSubStatus5]
-	bit SUBSTATUS_LOCK_ON, a
-	jr nz, .dont_fail
-
-	call BattleRandom
-	cp 25 percent + 1 ; 25% chance AI fails
-	ret c
-
-.dont_fail
-	xor a
-	ret
 
 BattleCommand_PoisonTarget:
 	call CheckSubstituteOpp
@@ -3731,27 +3733,6 @@ BattleCommand_Poison:
 	and a
 	jr nz, .failed
 
-	ldh a, [hBattleTurn]
-	and a
-	jr z, .dont_sample_failure
-
-	ld a, [wLinkMode]
-	and a
-	jr nz, .dont_sample_failure
-
-	ld a, [wInBattleTowerBattle]
-	and a
-	jr nz, .dont_sample_failure
-
-	ld a, [wPlayerSubStatus5]
-	bit SUBSTATUS_LOCK_ON, a
-	jr nz, .dont_sample_failure
-
-	call BattleRandom
-	cp 25 percent + 1 ; 25% chance AI fails
-	jr c, .failed
-
-.dont_sample_failure
 	call CheckSubstituteOpp
 	jr nz, .failed
 	ld a, [wAttackMissed]
@@ -4343,41 +4324,12 @@ BattleCommand_StatDown:
 ; Sharply lower the stat if applicable.
 	ld a, [wLoweredStat]
 	and $f0
-	jr z, .ComputerMiss
+	jr z, .GotAmountToLower
 	dec b
-	jr nz, .ComputerMiss
+	jr nz, .GotAmountToLower
 	inc b
 
-.ComputerMiss:
-; Computer opponents have a 25% chance of failing.
-	ldh a, [hBattleTurn]
-	and a
-	jr z, .DidntMiss
-
-	ld a, [wLinkMode]
-	and a
-	jr nz, .DidntMiss
-
-	ld a, [wInBattleTowerBattle]
-	and a
-	jr nz, .DidntMiss
-
-; Lock-On still always works.
-	ld a, [wPlayerSubStatus5]
-	bit SUBSTATUS_LOCK_ON, a
-	jr nz, .DidntMiss
-
-; Attacking moves that also lower accuracy are unaffected.
-	ld a, BATTLE_VARS_MOVE_EFFECT
-	call GetBattleVar
-	cp EFFECT_ACCURACY_DOWN_HIT
-	jr z, .DidntMiss
-
-	call BattleRandom
-	cp 25 percent + 1 ; 25% chance AI fails
-	jr c, .Failed
-
-.DidntMiss:
+.GotAmountToLower:
 	call CheckSubstituteOpp
 	jr nz, .Failed
 
@@ -4781,9 +4733,6 @@ CalcPlayerStats:
 
 	ld a, NUM_BATTLE_STATS
 	call CalcBattleStats
-
-	ld hl, BadgeStatBoosts
-	call CallBattleCore
 
 	call BattleCommand_SwitchTurn
 
@@ -5260,12 +5209,10 @@ BattleCommand_EndLoop:
 	jr .double_hit
 
 .only_one_beatup
-; BUG: Beat Up works incorrectly with only one Pokémon in the party (see docs/bugs_and_glitches.md)
 	ld a, BATTLE_VARS_SUBSTATUS3
 	call GetBattleVarAddr
 	res SUBSTATUS_IN_LOOP, [hl]
-	call BattleCommand_BeatUpFailText
-	jp EndMoveEffect
+	ret
 
 .not_triple_kick
 	call BattleRandom
@@ -5847,27 +5794,6 @@ BattleCommand_Paralyze:
 	jp StdBattleTextbox
 
 .no_item_protection
-	ldh a, [hBattleTurn]
-	and a
-	jr z, .dont_sample_failure
-
-	ld a, [wLinkMode]
-	and a
-	jr nz, .dont_sample_failure
-
-	ld a, [wInBattleTowerBattle]
-	and a
-	jr nz, .dont_sample_failure
-
-	ld a, [wPlayerSubStatus5]
-	bit SUBSTATUS_LOCK_ON, a
-	jr nz, .dont_sample_failure
-
-	call BattleRandom
-	cp 25 percent + 1 ; 25% chance AI fails
-	jr c, .failed
-
-.dont_sample_failure
 	ld a, BATTLE_VARS_STATUS_OPP
 	call GetBattleVarAddr
 	and a
@@ -6544,10 +6470,7 @@ INCLUDE "engine/battle/move_effects/future_sight.asm"
 INCLUDE "engine/battle/move_effects/thunder.asm"
 
 CheckHiddenOpponent:
-; BUG: Lock-On and Mind Reader don't always bypass Fly and Dig (see docs/bugs_and_glitches.md)
-	ld a, BATTLE_VARS_SUBSTATUS3_OPP
-	call GetBattleVar
-	and 1 << SUBSTATUS_FLYING | 1 << SUBSTATUS_UNDERGROUND
+	xor a
 	ret
 
 GetUserItem:
@@ -6776,4 +6699,34 @@ _CheckBattleScene:
 	pop bc
 	pop de
 	pop hl
+	ret
+
+SandstormSpDefBoost: 
+; First, check if Sandstorm is active.
+	ld a, [wBattleWeather]
+	cp WEATHER_SANDSTORM
+	ret nz
+
+; Then, check the opponent's types.
+	ld hl, wEnemyMonType1
+	ldh a, [hBattleTurn]
+	and a
+	jr z, .ok
+	ld hl, wBattleMonType1
+.ok
+	ld a, [hli]
+	cp ROCK
+	jr z, .start_boost
+	ld a, [hl]
+	cp ROCK
+	ret nz
+
+.start_boost
+	ld h, b
+	ld l, c
+	srl b
+	rr c
+	add hl, bc
+	ld b, h
+	ld c, l
 	ret

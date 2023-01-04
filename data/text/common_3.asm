@@ -189,11 +189,6 @@ _WouldYouLikeToSaveTheGameText::
 	line "save the game?"
 	done
 
-_SavingDontTurnOffThePowerText::
-	text "SAVING… DON'T TURN"
-	line "OFF THE POWER."
-	done
-
 _SavedTheGameText::
 	text "<PLAYER> saved"
 	line "the game."
@@ -477,6 +472,11 @@ _EvolvingText::
 
 _MartHowManyText::
 	text "How many?"
+	done
+
+AlreadyHaveTMText::
+	text "You already have"
+	line "that TM."
 	done
 
 _MartFinalPriceText::
@@ -910,22 +910,12 @@ _SpaceSpaceColonText:: ; unreferenced
 	done
 
 _PasswordAskResetText::
-	text "Password OK."
-	line "Select CONTINUE &"
-	cont "reset settings."
-	prompt
-
-_PasswordWrongText::
-	text "Wrong password!"
+	text "Select CONTINUE &"
+	line "reset settings."
 	prompt
 
 _PasswordAskResetClockText::
 	text "Reset the clock?"
-	done
-
-_PasswordAskEnterText::
-	text "Please enter the"
-	line "password."
 	done
 
 _ClearAllSaveDataText::
@@ -1406,19 +1396,14 @@ _ItemUsedText::
 	text "."
 	done
 
-_ItemGotOnText::
-	text "<PLAYER> got on the@"
-	text_low
-	text_ram wStringBuffer2
-	text "."
+_ExpShareToggleOn::
+	text "The EXP.SHARE was"
+	line "turned on."
 	prompt
 
-_ItemGotOffText::
-	text "<PLAYER> got off@"
-	text_low
-	text "the @"
-	text_ram wStringBuffer2
-	text "."
+_ExpShareToggleOff::
+	text "The EXP.SHARE was"
+	line "turned off."
 	prompt
 
 _KnowsMoveText::

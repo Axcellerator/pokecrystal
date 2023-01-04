@@ -433,7 +433,7 @@ wBattleScriptBufferAddress:: dw
 
 wTurnEnded:: db
 
-	ds 1
+wIsConfusionDamage:: db
 
 wPlayerStats::
 wPlayerAttack::  dw
@@ -580,11 +580,7 @@ wLastEnemyMove:: db
 wPlayerFutureSightCount:: db
 wEnemyFutureSightCount:: db
 
-wGivingExperienceToExpShareHolders:: db
-
-wBackupEnemyMonBaseStats:: ds NUM_EXP_STATS
-wBackupEnemyMonCatchRate:: db
-wBackupEnemyMonBaseExp:: db
+ds 8
 
 wPlayerFutureSightDamage:: dw
 wEnemyFutureSightDamage:: dw
@@ -2786,7 +2782,9 @@ wDudeNumBalls:: db
 wDudeBalls:: ds 2 * 4 + 1
 ENDU
 
-	ds 4
+wOtherTrainerType:: db
+wTrainerGroupBank:: db
+	ds 2
 
 wd430:: ; mobile
 wBattleAction:: db
@@ -2823,7 +2821,7 @@ wScriptTextBank::
 wDeferredScriptAddr::
 wScriptTextAddr::
 	dw
-	ds 1
+wWildBattlePanic:: db
 wWildEncounterCooldown:: db
 
 wXYComparePointer:: dw
@@ -3023,7 +3021,7 @@ wRegisteredItem:: db
 wPlayerState:: db
 
 wHallOfFameCount:: db
-	ds 1
+wExpShareToggle:: db
 wTradeFlags:: flag_array NUM_NPC_TRADES
 	ds 1
 wMooMooBerries:: db
@@ -3254,7 +3252,7 @@ wPhoneList:: ds CONTACT_LIST_SIZE + 1
 	ds 22
 
 wLuckyNumberShowFlag:: db
-	ds 1
+wRepelType:: db
 wLuckyIDNumber:: dw
 
 wRepelEffect:: db ; If a Repel is in use, it contains the nr of steps it's still active
@@ -3392,38 +3390,6 @@ wTempTilemap::
 ; 20x18 grid of 8x8 tiles
 	ds SCREEN_WIDTH * SCREEN_HEIGHT
 
-; PokeAnim data
-wPokeAnimStruct::
-wPokeAnimSceneIndex:: db
-wPokeAnimPointer:: dw
-wPokeAnimSpecies:: db
-wPokeAnimUnownLetter:: db
-wPokeAnimSpeciesOrUnown:: db
-wPokeAnimGraphicStartTile:: db
-wPokeAnimCoord:: dw
-wPokeAnimFrontpicHeight:: db
-wPokeAnimIdleFlag:: db
-wPokeAnimSpeed:: db
-wPokeAnimPointerBank:: db
-wPokeAnimPointerAddr:: dw
-wPokeAnimFramesBank:: db
-wPokeAnimFramesAddr:: dw
-wPokeAnimBitmaskBank:: db
-wPokeAnimBitmaskAddr:: dw
-wPokeAnimFrame:: db
-wPokeAnimJumptableIndex:: db
-wPokeAnimRepeatTimer:: db
-wPokeAnimCurBitmask:: db
-wPokeAnimWaitCounter:: db
-wPokeAnimCommand:: db
-wPokeAnimParameter:: db
-	ds 1
-wPokeAnimBitmaskCurCol:: db
-wPokeAnimBitmaskCurRow:: db
-wPokeAnimBitmaskCurBit:: db
-wPokeAnimBitmaskBuffer:: ds 7
-	ds 2
-wPokeAnimStructEnd::
 
 
 SECTION "Battle Tower RAM", WRAMX

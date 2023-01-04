@@ -4,10 +4,10 @@ _FruitBearingTreeText::
 	done
 
 _HeyItsFruitText::
-	text "Hey! It's"
+	text "Hey! Found"
 	line "@"
 	text_ram wStringBuffer3
-	text "!"
+	text "S!"
 	done
 
 _ObtainedFruitText::
@@ -15,6 +15,32 @@ _ObtainedFruitText::
 	line "@"
 	text_ram wStringBuffer3
 	text "!"
+	done
+_ObtainedTwoFruitText::
+	text "Obtained two"
+	line "@"
+	text_ram wStringBuffer3
+	text "S!"
+	done
+_ObtainedThreeFruitText::
+	text "Obtained three"
+	line "@"
+	text_ram wStringBuffer3
+	text "S!"
+	done
+
+_ObtainedFourFruitText::
+	text "Obtained four"
+	line "@"
+	text_ram wStringBuffer3
+	text "S!"
+	done
+
+_ObtainedFiveFruitText::
+	text "Obtained five"
+	line "@"
+	text_ram wStringBuffer3
+	text "S!"
 	done
 
 _FruitPackIsFullText::
@@ -1306,6 +1332,15 @@ _BugCatchingContestIsOverText::
 _RepelWoreOffText::
 	text "REPEL's effect"
 	line "wore off."
+	done
+	
+_UseAnotherRepelText::
+	text "@"
+	text_ram wStringBuffer3
+	text "'s"
+	line "wore off."
+
+	para "Use another?"
 	done
 
 _PlayerFoundItemText::

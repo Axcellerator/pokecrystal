@@ -157,6 +157,11 @@ WildFled_EnemyFled_LinkBattleCanceled:
 	ret
 
 BattleTurn:
+	ldh a, [hInMenu]
+	push af
+	ld a, 1 ; or "xor a" for the value 0
+	ldh [hInMenu], a
+
 .loop
 	call Stubbed_Increments5_a89a
 	call CheckContestBattleOver
@@ -196,6 +201,9 @@ BattleTurn:
 	jr nz, .quit
 .skip_iteration
 	call ParsePlayerAction
+	push af
+	call ClearSprites
+	pop af
 	jr nz, .loop1
 
 	call EnemyTriesToFlee
@@ -226,6 +234,8 @@ BattleTurn:
 	jp .loop
 
 .quit
+	pop af
+	ldh [hInMenu], a
 	ret
 
 Stubbed_Increments5_a89a:
@@ -294,8 +304,20 @@ HandleBetweenTurnEffects:
 	call LoadTilemapToTempTilemap
 	jp HandleEncore
 
+HasAnyoneFainted:
+	call HasPlayerFainted
+	jp nz, HasEnemyFainted
+	ret
+
 CheckFaint_PlayerThenEnemy:
-; BUG: Perish Song and Spikes can leave a Pokemon with 0 HP and not faint (see docs/bugs_and_glitches.md)
+.faint_loop
+	call .Function
+	ret c
+	call HasAnyoneFainted
+	ret nz
+	jr .faint_loop
+
+.Function:
 	call HasPlayerFainted
 	jr nz, .PlayerNotFainted
 	call HandlePlayerMonFaint
@@ -320,7 +342,14 @@ CheckFaint_PlayerThenEnemy:
 	ret
 
 CheckFaint_EnemyThenPlayer:
-; BUG: Perish Song and Spikes can leave a Pokemon with 0 HP and not faint (see docs/bugs_and_glitches.md)
+.faint_loop
+	call .Function
+	ret c
+	call HasAnyoneFainted
+	ret nz
+	jr .faint_loop
+
+.Function:
 	call HasEnemyFainted
 	jr nz, .EnemyNotFainted
 	call HandleEnemyMonFaint
@@ -389,11 +418,20 @@ HandleBerserkGene:
 	call GetPartyLocation
 	xor a
 	ld [hl], a
-; BUG: Berserk Gene's confusion lasts for 256 turns or the previous Pokémon's confusion count (see docs/bugs_and_glitches.md)
 	ld a, BATTLE_VARS_SUBSTATUS3
 	call GetBattleVarAddr
 	push af
 	set SUBSTATUS_CONFUSED, [hl]
+	ldh a, [hBattleTurn]
+	and a
+	ld hl, wPlayerConfuseCount
+	jr z, .set_confuse_count
+	ld hl, wEnemyConfuseCount
+.set_confuse_count
+	call BattleRandom
+	and %11
+	add 2
+	ld [hl], a
 	ld a, BATTLE_VARS_MOVE_ANIM
 	call GetBattleVarAddr
 	push hl
@@ -2149,95 +2187,26 @@ UpdateBattleStateAndExperienceAfterEnemyFaint:
 	ld a, [wBattleResult]
 	and BATTLERESULT_BITMASK
 	ld [wBattleResult], a ; WIN
-	call IsAnyMonHoldingExpShare
-	jr z, .skip_exp
-	ld hl, wEnemyMonBaseStats
-	ld b, wEnemyMonEnd - wEnemyMonBaseStats
-.loop
-	srl [hl]
-	inc hl
-	dec b
-	jr nz, .loop
-
-.skip_exp
-	ld hl, wEnemyMonBaseStats
-	ld de, wBackupEnemyMonBaseStats
-	ld bc, wEnemyMonEnd - wEnemyMonBaseStats
-	call CopyBytes
-	xor a
-	ld [wGivingExperienceToExpShareHolders], a
+	; Preserve bits of non-fainted participants
+	ld a, [wBattleParticipantsNotFainted]
+	ld d, a
+	push de
 	call GiveExperiencePoints
-	call IsAnyMonHoldingExpShare
+	pop de
+	; If Exp. Share is ON, give 50% EXP to non-participants
+	ld a, [wExpShareToggle]
+	and a
 	ret z
-
+	ld hl, wEnemyMonBaseExp
+	srl [hl]
 	ld a, [wBattleParticipantsNotFainted]
 	push af
 	ld a, d
+	xor %00111111
 	ld [wBattleParticipantsNotFainted], a
-	ld hl, wBackupEnemyMonBaseStats
-	ld de, wEnemyMonBaseStats
-	ld bc, wEnemyMonEnd - wEnemyMonBaseStats
-	call CopyBytes
-	ld a, $1
-	ld [wGivingExperienceToExpShareHolders], a
 	call GiveExperiencePoints
 	pop af
 	ld [wBattleParticipantsNotFainted], a
-	ret
-
-IsAnyMonHoldingExpShare:
-	ld a, [wPartyCount]
-	ld b, a
-	ld hl, wPartyMon1
-	ld c, 1
-	ld d, 0
-.loop
-	push hl
-	push bc
-	ld bc, MON_HP
-	add hl, bc
-	ld a, [hli]
-	or [hl]
-	pop bc
-	pop hl
-	jr z, .next
-
-	push hl
-	push bc
-	ld bc, MON_ITEM
-	add hl, bc
-	pop bc
-	ld a, [hl]
-	pop hl
-
-	cp EXP_SHARE
-	jr nz, .next
-	ld a, d
-	or c
-	ld d, a
-
-.next
-	sla c
-	push de
-	ld de, PARTYMON_STRUCT_LENGTH
-	add hl, de
-	pop de
-	dec b
-	jr nz, .loop
-
-	ld a, d
-	ld e, 0
-	ld b, PARTY_LENGTH
-.loop2
-	srl a
-	jr nc, .okay
-	inc e
-
-.okay
-	dec b
-	jr nz, .loop2
-	ld a, e
-	and a
 	ret
 
 StopDangerSound:
@@ -2556,10 +2525,6 @@ PlayVictoryMusic:
 	ld a, [wBattleMode]
 	dec a
 	jr nz, .trainer_victory
-	push de
-	call IsAnyMonHoldingExpShare
-	pop de
-	jr nz, .play_music
 	ld hl, wPayDayMoney
 	ld a, [hli]
 	or [hl]
@@ -3570,16 +3535,6 @@ ShowSetEnemyMonAndSendOutAnimation:
 	farcall CheckFaintedFrzSlp
 	jr c, .skip_cry
 
-	farcall CheckBattleScene
-	jr c, .cry_no_anim
-
-	hlcoord 12, 0
-	ld d, $0
-	ld e, ANIM_MON_SLOW
-	predef AnimateFrontpic
-	jr .skip_cry
-
-.cry_no_anim
 	ld a, $f
 	ld [wCryTracks], a
 	ld a, [wTempEnemyMonSpecies]
@@ -3896,7 +3851,6 @@ InitBattleMon:
 	ld bc, PARTYMON_STRUCT_LENGTH - MON_ATK
 	call CopyBytes
 	call ApplyStatusEffectOnPlayerStats
-	call BadgeStatBoosts
 	ret
 
 BattleCheckPlayerShininess:
@@ -4189,16 +4143,17 @@ PursuitSwitch:
 	or [hl]
 	jr nz, .done
 
-; BUG: A Pokémon that fainted from Pursuit will have its old status condition when revived (see docs/bugs_and_glitches.md)
 	ld a, $f0
 	ld [wCryTracks], a
 	ld a, [wBattleMonSpecies]
 	call PlayStereoCry
+	ld a, [wCurBattleMon]
+	push af
 	ld a, [wLastPlayerMon]
-	ld c, a
-	ld hl, wBattleParticipantsNotFainted
-	ld b, RESET_FLAG
-	predef SmallFarFlagAction
+	ld [wCurBattleMon], a
+	call UpdateFaintedPlayerMon
+	pop af
+	ld [wCurBattleMon], a
 	call PlayerMonFaintedAnimation
 	ld hl, BattleText_MonFainted
 	jr .done_fainted
@@ -5433,6 +5388,7 @@ MoveSelectionScreen:
 
 .battle_player_moves
 	call MoveInfoBox
+	call GetWeatherImage
 	ld a, [wSwappingMove]
 	and a
 	jr z, .interpret_joypad
@@ -5519,6 +5475,9 @@ MoveSelectionScreen:
 	ld hl, BattleText_TheresNoPPLeftForThisMove
 
 .place_textbox_start_over
+	push hl
+	call ClearSprites
+	pop hl
 	call StdBattleTextbox
 	call SafeLoadTempTilemapToTilemap
 	jp MoveSelectionScreen
@@ -5763,8 +5722,7 @@ CheckPlayerHasUsableMoves:
 	jr .loop
 
 .done
-; BUG: A Disabled but PP Up–enhanced move may not trigger Struggle (see docs/bugs_and_glitches.md)
-	and a
+	and PP_MASK
 	ret nz
 
 .force_struggle
@@ -6051,15 +6009,20 @@ LoadEnemyMon:
 	jp .Happiness
 
 .InitDVs:
-; Trainer DVs
-
-; All trainers have preset DVs, determined by class
-; See GetTrainerDVs for more on that
-	farcall GetTrainerDVs
-; These are the DVs we'll use if we're actually in a trainer battle
 	ld a, [wBattleMode]
 	dec a
-	jr nz, .UpdateDVs
+	jr z, .WildDVs
+
+; Trainer DVs
+	ld a, [wCurPartyMon]
+	ld hl, wOTPartyMon1DVs
+	call GetPartyLocation
+	ld b, [hl]
+	inc hl
+	ld c, [hl]
+	jr .UpdateDVs
+
+.WildDVs:
 
 ; Wild DVs
 ; Here's where the fun starts
@@ -6163,14 +6126,13 @@ LoadEnemyMon:
 	jr nz, .Happiness
 
 ; Get Magikarp's length
-; BUG: Magikarp length limits have a unit conversion error (see docs/bugs_and_glitches.md)
 	ld de, wEnemyMonDVs
 	ld bc, wPlayerID
 	callfar CalcMagikarpLength
 
 ; No reason to keep going if length > 1536 mm (i.e. if HIGH(length) > 6 feet)
 	ld a, [wMagikarpLength]
-	cp HIGH(1536)
+	cp 5
 	jr nz, .CheckMagikarpArea
 
 ; 5% chance of skipping both size checks
@@ -6179,7 +6141,7 @@ LoadEnemyMon:
 	jr c, .CheckMagikarpArea
 ; Try again if length >= 1616 mm (i.e. if LOW(length) >= 4 inches)
 	ld a, [wMagikarpLength + 1]
-	cp LOW(1616)
+	cp 4
 	jr nc, .GenerateDVs
 
 ; 20% chance of skipping this check
@@ -6188,24 +6150,23 @@ LoadEnemyMon:
 	jr c, .CheckMagikarpArea
 ; Try again if length >= 1600 mm (i.e. if LOW(length) >= 3 inches)
 	ld a, [wMagikarpLength + 1]
-	cp LOW(1600)
+	cp 3
 	jr nc, .GenerateDVs
 
 .CheckMagikarpArea:
-; BUG: Magikarp in Lake of Rage are shorter, not longer (see docs/bugs_and_glitches.md)
 	ld a, [wMapGroup]
 	cp GROUP_LAKE_OF_RAGE
-	jr z, .Happiness
+	jr nz, .Happiness
 	ld a, [wMapNumber]
 	cp MAP_LAKE_OF_RAGE
-	jr z, .Happiness
+	jr nz, .Happiness
 ; 40% chance of not flooring
 	call Random
 	cp 39 percent + 1
 	jr c, .Happiness
 ; Try again if length < 1024 mm (i.e. if HIGH(length) < 3 feet)
 	ld a, [wMagikarpLength]
-	cp HIGH(1024)
+	cp 3
 	jr c, .GenerateDVs ; try again
 
 ; Finally done with DVs
@@ -6221,6 +6182,14 @@ LoadEnemyMon:
 	ld de, wEnemyMonMaxHP
 	ld b, FALSE
 	ld hl, wEnemyMonDVs - (MON_DVS - MON_STAT_EXP + 1)
+	ld a, [wBattleMode]
+	cp TRAINER_BATTLE
+	jr nz, .no_stat_exp
+	ld a, [wCurPartyMon]
+	ld hl, wOTPartyMon1StatExp - 1
+	call GetPartyLocation
+	ld b, TRUE
+.no_stat_exp
 	predef CalcMonStats
 
 ; If we're in a trainer battle,
@@ -6381,15 +6350,27 @@ LoadEnemyMon:
 	ld a, [wTempEnemyMonSpecies]
 	ld [wNamedObjectIndex], a
 
-	call GetPokemonName
-
 ; Did we catch it?
 	ld a, [wBattleMode]
 	and a
 	ret z
 
 ; Update enemy nickname
+	ld a, [wBattleMode]
+	dec a ; WILD_BATTLE?
+	jr z, .no_nickname
+	ld a, [wOtherTrainerType]
+	bit TRAINERTYPE_NICKNAME_F, a
+	jr z, .no_nickname
+	ld a, [wCurPartyMon]
+	ld hl, wOTPartyMonNicknames
+	ld bc, MON_NAME_LENGTH
+	call AddNTimes
+	jr .got_nickname
+.no_nickname
+	call GetPokemonName
 	ld hl, wStringBuffer1
+.got_nickname
 	ld de, wEnemyMonNickname
 	ld bc, MON_NAME_LENGTH
 	call CopyBytes
@@ -6407,7 +6388,7 @@ LoadEnemyMon:
 	ld bc, NUM_EXP_STATS * 2
 	call CopyBytes
 
-; BUG: PRZ and BRN stat reductions don't apply to switched Pokémon (see docs/bugs_and_glitches.md)
+	call ApplyStatusEffectOnEnemyStats
 	ret
 
 CheckSleepingTreeMon:
@@ -6755,94 +6736,6 @@ ApplyStatLevelMultiplier:
 
 INCLUDE "data/battle/stat_multipliers_2.asm"
 
-BadgeStatBoosts:
-; Raise the stats of the battle mon in wBattleMon
-; depending on which badges have been obtained.
-
-; Every other badge boosts a stat, starting from the first.
-; GlacierBadge also boosts Special Defense, although the relevant code is buggy (see below).
-
-; 	ZephyrBadge:  Attack
-; 	PlainBadge:   Speed
-; 	MineralBadge: Defense
-; 	GlacierBadge: Special Attack and Special Defense
-
-; The boosted stats are in order, except PlainBadge and MineralBadge's boosts are swapped.
-
-	ld a, [wLinkMode]
-	and a
-	ret nz
-
-	ld a, [wInBattleTowerBattle]
-	and a
-	ret nz
-
-	ld a, [wJohtoBadges]
-
-; Swap badges 3 (PlainBadge) and 5 (MineralBadge).
-	ld d, a
-	and (1 << PLAINBADGE)
-	add a
-	add a
-	ld b, a
-	ld a, d
-	and (1 << MINERALBADGE)
-	rrca
-	rrca
-	ld c, a
-	ld a, d
-	and ((1 << ZEPHYRBADGE) | (1 << HIVEBADGE) | (1 << FOGBADGE) | (1 << STORMBADGE) | (1 << GLACIERBADGE) | (1 << RISINGBADGE))
-	or b
-	or c
-	ld b, a
-
-	ld hl, wBattleMonAttack
-	ld c, 4
-.CheckBadge:
-; BUG: Glacier Badge may not boost Special Defense depending on the value of Special Attack (see docs/bugs_and_glitches.md)
-	ld a, b
-	srl b
-	call c, BoostStat
-	inc hl
-	inc hl
-; Check every other badge.
-	srl b
-	dec c
-	jr nz, .CheckBadge
-	srl a
-	call c, BoostStat
-	ret
-
-BoostStat:
-; Raise stat at hl by 1/8.
-
-	ld a, [hli]
-	ld d, a
-	ld e, [hl]
-	srl d
-	rr e
-	srl d
-	rr e
-	srl d
-	rr e
-	ld a, [hl]
-	add e
-	ld [hld], a
-	ld a, [hl]
-	adc d
-	ld [hli], a
-
-; Cap at 999.
-	ld a, [hld]
-	sub LOW(MAX_STAT_VALUE)
-	ld a, [hl]
-	sbc HIGH(MAX_STAT_VALUE)
-	ret c
-	ld a, HIGH(MAX_STAT_VALUE)
-	ld [hli], a
-	ld a, LOW(MAX_STAT_VALUE)
-	ld [hld], a
-	ret
 
 _LoadBattleFontsHPBar:
 	callfar LoadBattleFontsHPBar
@@ -6981,7 +6874,6 @@ GiveExperiencePoints:
 	bit 0, a
 	ret nz
 
-	call .EvenlyDivideExpAmongParticipants
 	xor a
 	ld [wCurPartyMon], a
 	ld bc, wPartyMon1Species
@@ -7267,7 +7159,6 @@ GiveExperiencePoints:
 	ld [wApplyStatLevelMultipliersToEnemy], a
 	call ApplyStatLevelMultiplierOnAllStats
 	callfar ApplyStatusEffectOnPlayerStats
-	callfar BadgeStatBoosts
 	callfar UpdatePlayerHUD
 	call EmptyBattleTextbox
 	call LoadTilemapToTempTilemap
@@ -7349,40 +7240,6 @@ GiveExperiencePoints:
 
 .done
 	jp ResetBattleParticipants
-
-.EvenlyDivideExpAmongParticipants:
-; count number of battle participants
-	ld a, [wBattleParticipantsNotFainted]
-	ld b, a
-	ld c, PARTY_LENGTH
-	ld d, 0
-.count_loop
-	xor a
-	srl b
-	adc d
-	ld d, a
-	dec c
-	jr nz, .count_loop
-	cp 2
-	ret c
-
-	ld [wTempByteValue], a
-	ld hl, wEnemyMonBaseStats
-	ld c, wEnemyMonEnd - wEnemyMonBaseStats
-.base_stat_division_loop
-	xor a
-	ldh [hDividend + 0], a
-	ld a, [hl]
-	ldh [hDividend + 1], a
-	ld a, [wTempByteValue]
-	ldh [hDivisor], a
-	ld b, 2
-	call Divide
-	ldh a, [hQuotient + 3]
-	ld [hli], a
-	dec c
-	jr nz, .base_stat_division_loop
-	ret
 
 BoostExp:
 ; Multiply experience by 1.5x
@@ -7629,7 +7486,6 @@ SendOutMonText:
 	ld hl, GoMonText
 	jr z, .skip_to_textbox
 
-; BUG: Switching out or switching against a Pokémon with max HP below 4 freezes the game (see docs/bugs_and_glitches.md)
 	; compute enemy health remaining as a percentage
 	xor a
 	ldh [hMultiplicand + 0], a
@@ -7640,16 +7496,22 @@ SendOutMonText:
 	ld a, [hl]
 	ld [wEnemyHPAtTimeOfPlayerSwitch + 1], a
 	ldh [hMultiplicand + 2], a
-	ld a, 25
-	ldh [hMultiplier], a
-	call Multiply
 	ld hl, wEnemyMonMaxHP
 	ld a, [hli]
 	ld b, [hl]
-	srl a
+	ld c, 100
+	and a
+	jr z, .shift_done
+.shift
+	rra
 	rr b
-	srl a
-	rr b
+	srl c
+	and a
+	jr nz, .shift
+.shift_done
+	ld a, c
+	ldh [hMultiplier], a
+	call Multiply
 	ld a, b
 	ld b, 4
 	ldh [hDivisor], a
@@ -7721,16 +7583,22 @@ WithdrawMonText:
 	ld a, [de]
 	sbc b
 	ldh [hMultiplicand + 1], a
-	ld a, 25
-	ldh [hMultiplier], a
-	call Multiply
 	ld hl, wEnemyMonMaxHP
 	ld a, [hli]
 	ld b, [hl]
-	srl a
+	ld c, 100
+	and a
+	jr z, .shift_done
+.shift
+	rra
 	rr b
-	srl a
-	rr b
+	srl c
+	and a
+	jr nz, .shift
+.shift_done
+	ld a, c
+	ldh [hMultiplier], a
+	call Multiply
 	ld a, b
 	ld b, 4
 	ldh [hDivisor], a
@@ -9094,16 +8962,6 @@ BattleStartMessage:
 	farcall CheckSleepingTreeMon
 	jr c, .skip_cry
 
-	farcall CheckBattleScene
-	jr c, .cry_no_anim
-
-	hlcoord 12, 0
-	ld d, $0
-	ld e, ANIM_MON_NORMAL
-	predef AnimateFrontpic
-	jr .skip_cry ; cry is played during the animation
-
-.cry_no_anim
 	ld a, $f
 	ld [wCryTracks], a
 	ld a, [wTempEnemyMonSpecies]
@@ -9141,3 +8999,51 @@ BattleStartMessage:
 	farcall Mobile_PrintOpponentBattleMessage
 
 	ret
+
+GetWeatherImage:
+	ld a, [wBattleWeather]
+	and a
+	ret z
+	ld de, RainWeatherImage
+	lb bc, PAL_BATTLE_OB_BLUE, 4
+	dec a
+	jr z, .done
+	ld de, SunWeatherImage
+	ld b, PAL_BATTLE_OB_YELLOW
+	dec a
+	jr z, .done
+	ld de, SandstormWeatherImage
+	ld b, PAL_BATTLE_OB_BROWN
+	dec a
+	ret nz
+	
+.done
+	push bc
+	ld b, BANK(WeatherImages) ; c = 4
+	ld hl, vTiles0
+	call Request2bpp
+	pop bc
+	ld hl, wShadowOAMSprite00
+	ld de, .WeatherImageOAMData
+.loop
+	ld a, [de]
+	inc de
+	ld [hli], a
+	ld a, [de]
+	inc de
+	ld [hli], a
+	dec c
+	ld a, c
+	ld [hli], a
+	ld a, b
+	ld [hli], a
+	jr nz, .loop
+	ret
+
+.WeatherImageOAMData
+; positions are backwards since
+; we load them in reverse order
+	db $88, $1c ; y/x - bottom right
+	db $88, $14 ; y/x - bottom left
+	db $80, $1c ; y/x - top right
+	db $80, $14 ; y/x - top left

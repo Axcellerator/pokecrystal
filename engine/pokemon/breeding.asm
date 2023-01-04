@@ -620,12 +620,12 @@ GetBreedmonMovePointer:
 	ret
 
 GetEggFrontpic:
-; BUG: A hatching Unown egg would not show the right letter (see docs/bugs_and_glitches.md)
 	push de
 	ld [wCurPartySpecies], a
 	ld [wCurSpecies], a
 	call GetBaseData
-	ld hl, wBattleMonDVs
+	ld a, MON_DVS
+	call GetPartyParamLocation
 	predef GetUnownLetter
 	pop de
 	predef_jump GetMonFrontpic
@@ -635,7 +635,8 @@ GetHatchlingFrontpic:
 	ld [wCurPartySpecies], a
 	ld [wCurSpecies], a
 	call GetBaseData
-	ld hl, wBattleMonDVs
+	ld a, MON_DVS
+	call GetPartyParamLocation
 	predef GetUnownLetter
 	pop de
 	predef_jump GetAnimatedFrontpic
@@ -755,10 +756,7 @@ EggHatch_AnimationSequence:
 	call WaitSFX
 	ld a, [wJumptableIndex]
 	ld [wCurPartySpecies], a
-	hlcoord 6, 3
-	ld d, $0
-	ld e, ANIM_MON_HATCH
-	predef AnimateFrontpic
+	call PlayMonCry2
 	pop af
 	ld [wCurSpecies], a
 	ret
