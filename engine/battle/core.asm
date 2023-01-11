@@ -5628,7 +5628,10 @@ MoveInfoBox:
 	hlcoord 1, 10
 	ld de, .Disabled
 	call PlaceString
-	jr .done
+	hlcoord 1, 13
+	lb bc, 4, 3
+	call ClearBox
+	jp .done
 
 .not_disabled
 	ld hl, wMenuCursorY
@@ -5671,6 +5674,58 @@ MoveInfoBox:
 	ld b, a
 	hlcoord 2, 10
 	predef PrintMoveType
+	
+	hlcoord 1, 13
+    lb bc, 4, 3
+    call ClearBox
+.MoveInfo    
+    hlcoord 1, 13
+    ld de, .ATKString
+    call PlaceString
+    hlcoord 1, 15
+    ld de, .ACCString
+    call PlaceString    
+    ld hl, Moves + MOVE_POWER
+    ld a, [wCurSpecies]
+    dec a
+    push bc
+    ld bc, MOVE_LENGTH
+    call AddNTimes
+    ld a, BANK(Moves)
+    call GetFarByte
+    pop bc
+    hlcoord 1, 14
+    cp 2
+    jr c, .no_power
+    ld [wTextDecimalByte], a
+    ld de, wTextDecimalByte
+    lb bc, 1, 3
+    call PrintNum
+    jr .accuracy
+.no_power
+    ld de, .NoneString
+    call PlaceString
+.accuracy
+    ld hl, Moves + MOVE_ACC
+    ld a, [wCurSpecies]
+    dec a
+    push bc
+    ld bc, MOVE_LENGTH
+    call AddNTimes
+    ld a, BANK(Moves)
+    call GetFarByte
+    pop bc
+    hlcoord 1, 16
+    cp 2
+    jr c, .no_acc
+    ld [wTextDecimalByte], a
+    ld de, wTextDecimalByte
+    lb bc, 1, 3
+    call PrintNum
+    jr .done
+.no_acc
+    ld de, .NoneString
+    call PlaceString
 
 .done
 	ret
@@ -5679,6 +5734,12 @@ MoveInfoBox:
 	db "Disabled!@"
 .Type:
 	db "TYPE/@"
+.ATKString:
+    db "ATK@"
+.ACCString:
+    db "ACC@"
+.NoneString:
+    db "---@"
 
 .PrintPP:
 	hlcoord 5, 11
